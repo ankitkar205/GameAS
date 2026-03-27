@@ -64,7 +64,19 @@ function initPeerJS(hostGame = false) {
     // Generate a simple readable ID
     const randomId = Math.random().toString(36).substring(2, 6).toUpperCase();
     
-    peer = new Peer(hostGame ? randomId : null);
+    // Configure robust STUN servers for better NAT traversal over mobile/different networks
+    const peerConfig = {
+        config: {
+            'iceServers': [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun.services.mozilla.com' }
+            ]
+        }
+    };
+    
+    peer = new Peer(hostGame ? randomId : undefined, peerConfig);
     
     peer.on('open', (id) => {
         if (hostGame) {
@@ -83,8 +95,20 @@ function initPeerJS(hostGame = false) {
     });
 
     peer.on('error', (err) => {
-        showToast('Connection error: ' + err.type);
+        let errorMessage = 'Connection error: ' + err.type;
+        if (err.type === 'peer-unavailable') {
+            errorMessage = 'Code not found. Is the host waiting on the connection screen?';
+        } else if (err.type === 'webrtc') {
+            errorMessage = 'WebRTC error: Strict firewall or NAT blocking connection.';
+        }
+        
+        showToast(errorMessage);
         console.error(err);
+        
+        // Reset join button if we were trying to connect
+        if (btnJoinRoom.innerHTML.includes('Connecting')) {
+            btnJoinRoom.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Connect';
+        }
     });
 }
 
@@ -138,11 +162,11 @@ btnJoinRoom.addEventListener('click', () => {
         setupConnection();
         
         setTimeout(() => {
-            if (!conn.open) {
+            if (conn && !conn.open) {
                 btnJoinRoom.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i> Connect';
-                showToast('Failed to connect. Check code.');
+                showToast('Failed to connect. This might be a strict network/firewall issue.');
             }
-        }, 5000);
+        }, 10000); // 10 seconds timeout for slower networks
     });
 });
 
