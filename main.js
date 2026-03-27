@@ -174,9 +174,15 @@ document.querySelectorAll('.game-card').forEach(card => {
     card.addEventListener('click', () => {
         const game = card.dataset.game;
         const title = card.querySelector('h3').textContent;
+        
+        let word = null;
+        if (game === 'telepathy') {
+            word = telepathyWords[Math.floor(Math.random() * telepathyWords.length)];
+        }
+
         // Notify partner we are starting a game
-        conn.send({ type: 'START_GAME', game, title });
-        startGame(game, title);
+        conn.send({ type: 'START_GAME', game, title, word });
+        startGame(game, title, word);
     });
 });
 
@@ -192,7 +198,7 @@ document.querySelector('.btn-back').addEventListener('click', () => {
 function handleIncomingData(data) {
     switch (data.type) {
         case 'START_GAME':
-            startGame(data.game, data.title);
+            startGame(data.game, data.title, data.word);
             break;
         case 'BACK_TO_MENU':
             switchScreen('screen-menu');
@@ -204,11 +210,14 @@ function handleIncomingData(data) {
         case 'SYNC_RESULT':
             showSyncResult(data.score);
             break;
+        case 'SYNC_RESTART':
+            resetSync();
+            break;
         case 'TELEPATHY_SUBMIT':
             handleTelepathyPartnerSubmission(data.answer);
             break;
         case 'TELEPATHY_RESTART':
-            resetTelepathy();
+            resetTelepathy(data.word);
             break;
         case 'CARD_DRAWN':
             showDeepTalkCard(data.index);
@@ -222,11 +231,12 @@ function handleIncomingData(data) {
     }
 }
 
-function startGame(game, title) {
+function startGame(game, title, word = null) {
     resetAllGames();
     switchGameView(game, title);
-    if (game === 'telepathy') resetTelepathy();
+    if (game === 'telepathy') resetTelepathy(word);
     else if (game === 'tictactoe') resetTTT();
+    else if (game === 'sync') resetSync();
 }
 
 function resetAllGames() {
@@ -237,13 +247,12 @@ document.querySelectorAll('.btn-reset-game').forEach(btn => {
     btn.addEventListener('click', () => {
         const activeView = btn.closest('.game-view').id;
         if (activeView === 'view-sync') {
-            document.getElementById('sync-result').classList.add('hidden');
-            document.querySelectorAll('.status-dot').forEach(d => d.classList.remove('active'));
-            syncState = { me: null, partner: null };
-            document.getElementById('btn-sync-press').disabled = false;
+            conn.send({ type: 'SYNC_RESTART' });
+            resetSync();
         } else if (activeView === 'view-telepathy') {
-            conn.send({ type: 'TELEPATHY_RESTART' });
-            resetTelepathy();
+            const newWord = telepathyWords[Math.floor(Math.random() * telepathyWords.length)];
+            conn.send({ type: 'TELEPATHY_RESTART', word: newWord });
+            resetTelepathy(newWord);
         } else if (activeView === 'view-tictactoe') {
             conn.send({ type: 'TTT_RESTART' });
             resetTTT();
@@ -255,6 +264,13 @@ document.querySelectorAll('.btn-reset-game').forEach(btn => {
 // Mini Game 1: Sync Test
 // -----------------------------------------
 let syncState = { me: null, partner: null };
+
+function resetSync() {
+    document.getElementById('sync-result').classList.add('hidden');
+    document.querySelectorAll('.status-dot').forEach(d => d.classList.remove('active'));
+    syncState = { me: null, partner: null };
+    document.getElementById('btn-sync-press').disabled = false;
+}
 
 document.getElementById('btn-sync-press').addEventListener('click', () => {
     const now = Date.now();
@@ -303,9 +319,9 @@ const telepathyWords = ["Music", "Movie", "Animal", "Food", "Color", "Dream", "F
 let currentPromptWord = "";
 let telepathyState = { me: null, partner: null };
 
-function resetTelepathy() {
+function resetTelepathy(forcedWord = null) {
     telepathyState = { me: null, partner: null };
-    currentPromptWord = telepathyWords[Math.floor(Math.random() * telepathyWords.length)];
+    currentPromptWord = forcedWord || telepathyWords[Math.floor(Math.random() * telepathyWords.length)];
     document.getElementById('telepathy-prompt').textContent = `Category: ${currentPromptWord}`;
     
     document.getElementById('telepathy-answer').value = '';
